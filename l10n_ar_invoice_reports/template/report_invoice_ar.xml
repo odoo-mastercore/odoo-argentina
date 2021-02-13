@@ -90,7 +90,7 @@
         <t t-if="o.currency_id != o.company_id.currency_id">
             <br/> <p>El total de este comprobante expresado en moneda de curso legal
             - Pesos Argentinos - considerándose un tipo de cambio consignado de 
-            <span t-esc="o.currency_rate_inverted(o.currency_rate)"/> asciende a 
+            <span t-esc="o.currency_rate_inverted(o.l10n_ar_currency_rate)"/> asciende a 
             <span t-field="o.amount_total_signed"/></p>
         </t>
     </xpath>
