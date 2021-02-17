@@ -91,7 +91,7 @@
             <br/> <p>El total de este comprobante expresado en moneda de curso legal, equivale a un total 
             de <span t-field="o.amount_total_signed"/>
             considerándose un tipo de cambio consignado de 
-            <span t-esc="o.currency_rate_inverted(o.currency_rate)"/>
+            <span t-esc="o.currency_rate_inverted(o.l10n_ar_currency_rate)"/>
             </p> 
         </t>
     </p>
