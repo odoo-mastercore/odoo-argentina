@@ -8,7 +8,7 @@
     'category': 'Localization/Argentina',
     'sequence': 15,
     'author': 'ADHOC SA, MASTERCORE SAS',
-    'website': 'https://www.sinapsys.global',
+    'website': 'https://sinapsys.global',
     'license': 'AGPL-3.0',
     'summary': '',
     'depends': [
@@ -24,4 +24,3 @@
     'application': False,
     'post_init_hook': 'post_init_hook',
 }
-
