@@ -9,7 +9,7 @@
     'sequence': 15,
     'author': 'ADHOC SA, MASTERCORE SAS',
     'website': 'https://sinapsys.global',
-    'license': 'AGPL-3.0',
+    'license': 'AGPL-3',
     'summary': '',
     'depends': [
         'account',
