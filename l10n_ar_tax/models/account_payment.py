@@ -91,7 +91,16 @@ class AccountPayment(models.Model):
     @api.onchange("withholdings_amount")
     def _onchange_withholdings(self):
         # solo queremos re-computar en pagos de proveedor
-        for rec in self.filtered(lambda x: x.partner_type == "supplier" and not x._is_latam_check_payment()):
+        for rec in self.filtered(
+            lambda x: x.partner_type == "supplier"
+            and x.payment_method_code
+            not in [
+                "in_third_party_checks",
+                "out_third_party_checks",
+                "return_third_party_checks",
+                "new_third_party_checks",
+            ]
+        ):
             # el compute_withholdings o el _compute_withholdings?
             amount = rec.amount + rec.payment_difference
             # no pasamos a importes negativos (por ej. si se ponene retenciones grandes) porque es molesto
@@ -395,12 +404,6 @@ class AccountPayment(models.Model):
                 )
                 withholdings += [Command.create({"tax_id": x.id}) for x in taxes]
             rec.l10n_ar_withholding_line_ids = withholdings
-            # Si hay retenciones que no son de ganancias y el importe a retener es 0 las quitamos
-            # Ejemplo: retenciones en pagos de notas de crédito (el monto base es negativo)
-            # to_remove = rec.l10n_ar_withholding_line_ids.filtered(
-            #     lambda wth: wth.amount == 0 and wth.tax_id.l10n_ar_tax_type not in ["earnings", "earnings_scale"]
-            # )
-            # rec.l10n_ar_withholding_line_ids -= to_remove
 
     def compute_to_pay_amount_for_check(self):
         checks_payments = self.filtered(
