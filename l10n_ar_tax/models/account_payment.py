@@ -119,14 +119,16 @@ class AccountPayment(models.Model):
     def _onchange_withholdings(self):
         # solo queremos re-computar en pagos de proveedor
         for rec in self.filtered(
-            lambda x: x.partner_type == "supplier"
-            and x.payment_method_code
-            not in [
-                "in_third_party_checks",
-                "out_third_party_checks",
-                "return_third_party_checks",
-                "new_third_party_checks",
-            ]
+            lambda x: (
+                x.partner_type == "supplier"
+                and x.payment_method_code
+                not in [
+                    "in_third_party_checks",
+                    "out_third_party_checks",
+                    "return_third_party_checks",
+                    "new_third_party_checks",
+                ]
+            )
         ):
             # payment_difference está en B2 (destination_currency_id).
             # Necesitamos convertirlo a A (moneda del journal) para ajustar rec.amount.
@@ -142,6 +144,8 @@ class AccountPayment(models.Model):
             # no pasamos a importes negativos (por ej. si se ponen retenciones grandes) porque es molesto
             # empieza a salir un raise que no deja editar cosas
             rec.amount = amount if amount > 0 else 0
+            # Sincronizar amount_exact con el nuevo amount para mantener consistencia
+            rec.amount_exact = rec.amount
             # rec.unreconciled_amount = rec.to_pay_amount - rec.selected_debt
 
     @api.onchange("partner_id")
@@ -454,7 +458,7 @@ class AccountPayment(models.Model):
     def _compute_l10n_ar_withholding_line_ids(self):
         # metodo completamente analogo a payment.register._compute_l10n_ar_withholding_ids
         for rec in self.filtered(lambda x: x.partner_type == "supplier"):
-            date = rec.date or fields.Date.today()
+            date = rec.date or fields.Date.context_today(rec)
             withholdings = [Command.clear()]
             if rec.l10n_ar_fiscal_position_id.l10n_ar_tax_ids:
                 taxes = rec.l10n_ar_fiscal_position_id._l10n_ar_add_taxes(
