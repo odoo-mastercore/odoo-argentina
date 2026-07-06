@@ -15,7 +15,8 @@ class AccountFiscalPositionL10nArTax(models.Model):
     _description = "account.fiscal.position.l10n_ar_tax"
 
     fiscal_position_id = fields.Many2one("account.fiscal.position", required=True, ondelete="cascade")
-    # ponemos default a los selectio porque al ser requeridos si no se comporta raro y parece que elige uno por defecto
+    company_id = fields.Many2one("res.company", related="fiscal_position_id.company_id", store=True)
+    # ponemos default a los selection porque al ser requeridos si no se comporta raro y parece que elige uno por defecto
     # pero que no esta seleccionado
     webservice = fields.Selection(
         [
@@ -28,8 +29,30 @@ class AccountFiscalPositionL10nArTax(models.Model):
     tax_template_domain = fields.Char(compute="_compute_tax_template_domain")
     default_tax_id = fields.Many2one("account.tax", required=True)
     tax_type = fields.Selection(
-        [("withholding", "Withholding"), ("perception", "Perception")], required=True, default="withholding"
+        [("withholding", "Withholding"), ("perception", "Perception")],
+        required=True,
+        default=lambda self: self.env.context.get("default_tax_type", "withholding"),
     )
+    tax_group_id = fields.Many2one(
+        "account.tax.group",
+        string="Tax Group",
+        compute="_compute_tax_group_id",
+        inverse="_inverse_tax_group_aliquot",
+        check_company=True,
+    )
+    aliquot = fields.Float(
+        string="Aliquot (%)",
+        digits=(5, 2),
+        compute="_compute_aliquot",
+        inverse="_inverse_tax_group_aliquot",
+    )
+    tax_group_id_domain = fields.Char(compute="_compute_tax_group_id_domain")
+    l10n_ar_is_iibb = fields.Boolean(compute="_compute_l10n_ar_is_iibb")
+
+    @api.depends("tax_group_id")
+    def _compute_l10n_ar_is_iibb(self):
+        for rec in self:
+            rec.l10n_ar_is_iibb = bool(rec.tax_group_id.tax_ids.filtered(lambda t: t.l10n_ar_state_id))
 
     @api.constrains("fiscal_position_id", "default_tax_id")
     def _check_tax_group_overlap(self):
@@ -71,23 +94,130 @@ class AccountFiscalPositionL10nArTax(models.Model):
                 taxes += rec.default_tax_id
         return taxes
 
-    @api.depends("fiscal_position_id", "tax_type")
+    @api.depends("fiscal_position_id", "tax_type", "l10n_ar_is_iibb")
     def _compute_tax_template_domain(self):
         for rec in self:
-            rec.tax_template_domain = rec._get_tax_domain(filter_tax_group=False)
+            domain = rec._get_tax_domain(filter_tax_group=False)
+            if not rec.l10n_ar_is_iibb:
+                domain += [("l10n_ar_tax_type", "not in", ["iibb_untaxed", "iibb_total"])]
+            rec.tax_template_domain = domain
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Resolve default_tax_id from tax_group_id + aliquot before INSERT so that
+        the required=True constraint on default_tax_id is satisfied.
+        Also derives webservice from default_tax_id when not explicitly provided."""
+        for vals in vals_list:
+            if not vals.get("default_tax_id") and vals.get("tax_group_id") and "aliquot" in vals:
+                stub = self.new(vals)
+                stub._sync_default_tax_from_ux_fields()
+                if stub.default_tax_id:
+                    vals["default_tax_id"] = stub.default_tax_id.id
+                    if stub.webservice and "webservice" not in vals:
+                        vals["webservice"] = stub.webservice
+            if vals.get("default_tax_id") and "webservice" not in vals:
+                stub = self.new(vals)
+                vals["webservice"] = stub._get_webservice_for_state(stub.default_tax_id.l10n_ar_state_id)
+        return super().create(vals_list)
+
+    @api.depends("default_tax_id")
+    def _compute_tax_group_id(self):
+        for rec in self:
+            rec.tax_group_id = rec.default_tax_id.tax_group_id
+
+    @api.depends("default_tax_id")
+    def _compute_aliquot(self):
+        for rec in self:
+            rec.aliquot = rec.default_tax_id.amount
+
+    def _inverse_tax_group_aliquot(self):
+        self._sync_default_tax_from_ux_fields()
+
+    @api.onchange("tax_group_id")
+    def _onchange_tax_group_id(self):
+        """When group changes, sync only if aliquot is already filled."""
+        if self.tax_group_id and self.aliquot:
+            self._sync_default_tax_from_ux_fields()
+
+    @api.onchange("aliquot")
+    def _onchange_aliquot(self):
+        """When aliquot changes (including to 0), sync if group is set."""
+        if self.tax_group_id:
+            self._sync_default_tax_from_ux_fields()
+
+    def _get_webservice_for_state(self, state):
+        """Returns the webservice selection value for a given state (res.country.state).
+        Override in downstream modules to add support for additional jurisdictions."""
+        mapping = {
+            "901": "agip",  # CABA
+            "902": "arba",  # Buenos Aires provincia
+            "904": "rentas_cordoba",  # Córdoba
+            "921": "padron",  # Santa Fe
+        }
+        return mapping.get(state.jurisdiction_code if state else "", False)
+
+    def _sync_default_tax_from_ux_fields(self):
+        """Derives default_tax_id (and webservice) from tax_group_id + aliquot.
+        Only runs for IIBB groups; non-IIBB taxes (Ganancias, IVA, etc.) are
+        selected directly by the user via default_tax_id."""
+        for rec in self:
+            if not rec.tax_group_id:
+                continue
+            if not rec.tax_group_id.tax_ids.filtered(lambda t: t.l10n_ar_state_id):
+                continue
+            new_tax = rec._ensure_tax(rec.aliquot)
+            if new_tax and new_tax != rec.default_tax_id:
+                rec.default_tax_id = new_tax
+            if new_tax:
+                rec.webservice = rec._get_webservice_for_state(new_tax.l10n_ar_state_id)
+
+    @api.depends("fiscal_position_id.company_id", "tax_type")
+    def _compute_tax_group_id_domain(self):
+        for rec in self:
+            company_id = rec.fiscal_position_id.company_id.id or rec.env.company.id
+            domain = [
+                ("company_id", "=", company_id),
+                ("l10n_ar_vat_afip_code", "=", False),
+            ]
+            if rec.tax_type == "perception":
+                domain += [("tax_ids.type_tax_use", "=", "sale")]
+            elif rec.tax_type == "withholding":
+                domain += [("tax_ids.l10n_ar_withholding_payment_type", "=", "supplier")]
+            rec.tax_group_id_domain = json.dumps(domain)
 
     def _get_tax_domain(self, filter_tax_group=True):
         self.ensure_one()
         domain = self.env["account.tax"]._check_company_domain(self.fiscal_position_id.company_id)
         domain += [("amount_type", "in", ["percent", "division"])]
         if filter_tax_group:
-            domain += [("tax_group_id", "=", self.default_tax_id.tax_group_id.id)]
+            tax_group = self.tax_group_id or self.default_tax_id.tax_group_id
+            if tax_group:
+                domain += [("tax_group_id", "=", tax_group.id)]
             if self.tax_type == "withholding":
                 # TODO esto lo deberiamos borrar al ir a odoo 19 y solo usar los tax groups
                 # por ahora, para no renegar con scripts de migra que requieran crear tax groups para cada jurisdiccion y
                 # ademas luego tener que ajustar a lo que hagamos en 19, usamos la jursdiccion como elemento de agrupacion
-                # solo para retenciones
-                domain += [("l10n_ar_state_id", "=", self.default_tax_id.l10n_ar_state_id.id)]
+                # solo para retenciones.
+                # Derivamos el estado desde tax_group_id (cuando fue cambiado) para no filtrar
+                # por el estado del default_tax_id anterior (jurisdicción vieja).
+                state_id = False
+                if self.tax_group_id:
+                    ref_tax = (
+                        self.env["account.tax"]
+                        .with_context(active_test=False)
+                        .search(
+                            [
+                                ("tax_group_id", "=", self.tax_group_id.id),
+                                ("l10n_ar_withholding_payment_type", "=", "supplier"),
+                            ],
+                            limit=1,
+                        )
+                    )
+                    state_id = ref_tax.l10n_ar_state_id.id if ref_tax else False
+                if not state_id and self.default_tax_id:
+                    state_id = self.default_tax_id.l10n_ar_state_id.id
+                if state_id:
+                    domain += [("l10n_ar_state_id", "=", state_id)]
         if self.tax_type == "perception":
             domain += [("type_tax_use", "=", "sale")]
         elif self.tax_type == "withholding":
@@ -100,17 +230,23 @@ class AccountFiscalPositionL10nArTax(models.Model):
         self.ensure_one()
         domain = self._get_tax_domain()
         tax = self.env["account.tax"].with_context(active_test=False).search(domain + [("amount", "=", rate)], limit=1)
-        if not tax.active:
+        if tax and not tax.active:
             tax.active = True
         if not tax:
-            if "%" not in self.default_tax_id.name:
-                name = f"{self.default_tax_id.name} {rate}%"
+            # Buscar template desde el tax_group actual (puede ser un grupo nuevo/diferente).
+            # Esto garantiza que el impuesto copiado tenga el estado/jurisdicción correcta.
+            template_domain = self._get_tax_domain(filter_tax_group=True)
+            template_tax = self.env["account.tax"].with_context(active_test=False).search(template_domain, limit=1)
+            if not template_tax:
+                template_tax = self.default_tax_id
+            if not template_tax:
+                return self.env["account.tax"]
+            if "%" not in template_tax.name:
+                name = f"{template_tax.name} {rate}%"
             else:
-                # Usamos re.sub para reemplazar el patrón con el nuevo número seguido de '%'
-                # Si ya tiene un porcentaje, lo reemplazamos
-                name = re.sub(r"\b\d+(\.\d+)?\s*%", f"{rate}%", self.default_tax_id.name)
+                name = re.sub(r"\b\d+(\.\d+)?\s*%", f"{rate}%", template_tax.name)
 
-            tax = self.default_tax_id.copy(
+            tax = template_tax.copy(
                 default={
                     # dejamos sequencia mas baja para que siempre el que se duplica sea el que esta arriba
                     "sequence": 10,
@@ -190,7 +326,7 @@ class AccountFiscalPositionL10nArTax(models.Model):
         # si es base en data demo devolvemos una alicuota demo para que no falle la demo data
         if self.env.ref("base.user_demo", raise_if_not_found=False):
             return (2.5 if self.tax_type == "withholding" else 3.0, "VALOR DUMMY | dummy")
-        raise UserError(_("Falta configuración de credenciales de ADHOC para consulta de Alícuotas de AGIP"))
+        raise UserError(_("Missing ADHOC credential configuration for AGIP tax rate queries"))
 
     def _get_arba_data(self, partner, date, to_date):
         """Metodo que obtiene la alicuota de ARBA de un partner y fecha dado
@@ -205,6 +341,10 @@ class AccountFiscalPositionL10nArTax(models.Model):
         para obtener la alícuota, sino consultamos el webservice de ARBA
         """
         self.ensure_one()
+
+        # si es una base demo devolvemos una alicuota dummy para que no falle la demo data
+        if self.env.ref("base.user_demo", raise_if_not_found=False):
+            return (2.5 if self.tax_type == "withholding" else 3.0, "VALOR DUMMY | dummy")
 
         cuit = partner.ensure_vat()
         _logger.info("Getting ARBA data for cuit %s from date %s to date %s" % (date, to_date, cuit))
@@ -262,28 +402,26 @@ class AccountFiscalPositionL10nArTax(models.Model):
         payload = {"body": partner.vat}
         headers = {"content-type": "application/json"}
 
-        error_msg = self.env._(
-            "No pudimos obtener la alicuota del webservice de rentascordoba.\n\n"
-            "Para asignar la alícuota de Córdoba a un contacto, siga estos pasos:\n"
-            "1) Consulte la alícuota del contacto en: https://www.rentascordoba.gob.ar/gestiones/consulta-alicuota\n"
-            "2) Cree manualmente la alícuota en la vista formulario del Contacto (solapa 'Contabilidad').\n\n"
-            "En caso de dudas o si el problema persiste, comuníquese con nuestro equipo de Servicio de Asistencia.\n"
-            "Detalle del error:\n"
+        error_msg = _(
+            "Could not get the tax rate from the rentascordoba webservice.\n\n"
+            "To assign the Córdoba tax rate to a contact, follow these steps:\n"
+            "1) Check the contact's tax rate at: https://www.rentascordoba.gob.ar/gestiones/consulta-alicuota\n"
+            "2) Manually create the tax rate in the Contact form view (tab 'Accounting').\n\n"
+            "If you have questions or the problem persists, please contact our Support team.\n"
+            "Error detail:\n"
         )
 
         # Realizar solicitud
         try:
             r = requests.post(url, data=json.dumps(payload), headers=headers, timeout=10)
         except requests.exceptions.Timeout as e:
-            msg = self.env._(error_msg + "Timeout error when getting data.")
             _logger.warning("%s" % str(e))
-            raise UserError("%s" % msg)
+            raise UserError(error_msg + _("Timeout error when getting data."))
         except requests.exceptions.RequestException as e:
             _logger.warning("%s" % str(e))
-            raise UserError("%s" % error_msg)
+            raise UserError(error_msg)
         if r.status_code == 404:
-            msg = _(error_msg + "404 Not Found error.")
-            raise UserError("%s" % msg)
+            raise UserError(error_msg + _("404 Not Found error."))
         json_body = r.json()
         code = json_body.get("errorCod")
         ref = json_body.get("message")
@@ -311,9 +449,7 @@ class AccountFiscalPositionL10nArTax(models.Model):
                 to_date_date = fields.Date.from_string(dict_alic.get("CRD_FECHA_FIN"))
                 if not (from_date_date <= date <= to_date_date):
                     raise UserError(
-                        self.env._(
-                            "No se puede obtener automáticamente la alicuota para la fecha %s. Por favor, ingrese la misma manualmente en el partner."
-                        )
+                        _("Cannot automatically get the tax rate for date %s. Please enter it manually on the contact.")
                         % date
                     )
 
@@ -336,6 +472,8 @@ class AccountFiscalPositionL10nArTax(models.Model):
         return: alicuot, ref
         """
         self.ensure_one()
+        if self.env.ref("base.user_demo", raise_if_not_found=False):
+            return (2.5 / 3.0, "VALOR DUMMY | dummy")
         state = self.default_tax_id.l10n_ar_state_id
         padron_file = self._search_padron_file(state, date)
         if not padron_file:
@@ -345,7 +483,7 @@ class AccountFiscalPositionL10nArTax(models.Model):
             # Si se está consultando alícuota con tipo "padron" y no hay, entonces damos error.
             raise UserError(
                 _(
-                    "No hay padrón subido para la fecha indicada %s a %s. Debe subirlo en 'Contabilidad / Configuración / AFIP / Padrón de Alícuotas por compañía' o cargar la alícuota manualmente en el contacto para el período en curso."
+                    "No padron uploaded for the indicated date %s to %s. You must upload it in 'Accounting / Configuration / AFIP / Tax Rate Padron by Company' or manually enter the tax rate on the contact for the current period."
                 )
                 % (date, to_date)
             )
@@ -355,17 +493,17 @@ class AccountFiscalPositionL10nArTax(models.Model):
                 # en santa fe en realidad no hay nro, viene True/False (Segun si lo encontramos), por eso no devolvemos string genérica
                 return (
                     alicuot_ret if self.tax_type == "withholding" else alicuot_per,
-                    "Alícuota padrón Santa Fe",
+                    _("Santa Fe padron aliquot"),
                 )
             else:
-                return None, "Alícuota castigo. No figura en padrón Santa Fe"
+                return None, _("Penalty aliquot. Not found in Santa Fe padron")
         if state.jurisdiction_code == "902":
             if nro:
                 return (
                     float(alicuot_ret.replace(",", "."))
                     if self.tax_type == "withholding"
                     else float(alicuot_per.replace(",", ".")),
-                    "Alícuota padrón ARBA (archivo importado)",
+                    _("ARBA padron aliquot (imported file)"),
                 )
             else:
-                return None, "Alícuota no inscripto ARBA (archivo importado)"
+                return None, _("ARBA unregistered aliquot (imported file)")

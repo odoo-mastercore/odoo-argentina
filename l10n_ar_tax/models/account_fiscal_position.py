@@ -6,6 +6,42 @@ class AccountFiscalPosition(models.Model):
     _inherit = "account.fiscal.position"
 
     l10n_ar_tax_ids = fields.One2many("account.fiscal.position.l10n_ar_tax", "fiscal_position_id")
+    l10n_ar_tax_type = fields.Selection(
+        selection=[
+            ("perception", "Perception"),
+            ("withholding", "Withholding"),
+            ("none", "None"),
+        ],
+        string="AR Tax Type",
+        compute="_compute_l10n_ar_tax_type",
+        inverse="_inverse_l10n_ar_tax_type",
+    )
+
+    @api.depends("l10n_ar_tax_ids.tax_type")
+    def _compute_l10n_ar_tax_type(self):
+        for rec in self:
+            types = set(rec.l10n_ar_tax_ids.mapped("tax_type"))
+            if types == {"perception"}:
+                rec.l10n_ar_tax_type = "perception"
+            elif types == {"withholding"}:
+                rec.l10n_ar_tax_type = "withholding"
+            else:
+                rec.l10n_ar_tax_type = "none"
+
+    def _inverse_l10n_ar_tax_type(self):
+        for rec in self:
+            if rec.l10n_ar_tax_type != "none":
+                conflicting = rec.l10n_ar_tax_ids.filtered(lambda x: x.tax_type != rec.l10n_ar_tax_type)
+                if conflicting:
+                    raise ValidationError(
+                        _(
+                            "Cannot set AR tax type to '%(new_type)s': the fiscal position already has "
+                            "taxes of a different type configured (%(taxes)s). Remove them first.",
+                            new_type=rec.l10n_ar_tax_type,
+                            taxes=", ".join(conflicting.mapped("default_tax_id.name")),
+                        )
+                    )
+                rec.l10n_ar_tax_ids.write({"tax_type": rec.l10n_ar_tax_type})
 
     def _l10n_ar_add_taxes(self, partner, company, date, tax_type, payment=None):
         # TODO deberiamos unificar mucho de este codigo con _get_tax_domain, _compute_withholdings y _check_tax_group_overlap
@@ -40,9 +76,9 @@ class AccountFiscalPosition(models.Model):
             if len(partner_tax) > 1:
                 raise RedirectWarning(
                     message=_(
-                        "El contacto '%(name)s' (id: %(id)s) tiene múltiples impuestos vigentes para el grupo "
-                        "de impuestos '%(tax_group)s' en la fecha '%(date)s' y compañía '%(company)s'. Ver "
-                        "solapa 'Contabilidad' de la vista formulario del contacto.",
+                        "Contact '%(name)s' (id: %(id)s) has multiple active taxes for the tax group "
+                        "'%(tax_group)s' on date '%(date)s' and company '%(company)s'. See "
+                        "the 'Accounting' tab on the contact form view.",
                         name=partner.name,
                         id=partner.id,
                         tax_group=fp_tax.default_tax_id.tax_group_id.name,
@@ -50,7 +86,7 @@ class AccountFiscalPosition(models.Model):
                         company=company.name,
                     ),
                     action=partner.get_formview_action(),
-                    button_text=_("Editar contacto"),
+                    button_text=_("Edit contact"),
                 )
             if partner_tax and partner_tax.l10n_ar_tax_type != "earnings_scale" and partner_tax.amount == 0:
                 # se eliminan todos los impuestos cuyo monto sea 0, excepto los de tipo "earnings_scale"
