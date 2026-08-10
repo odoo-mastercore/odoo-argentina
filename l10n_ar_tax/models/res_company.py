@@ -92,16 +92,33 @@ class ResCompany(models.Model):
         file = self._arba_prepare_file(vat, date_from, date_to)
         login_url = self.get_arba_login_url(environment_type)
         arba_alicout_timeout = int(
-            self.env["ir.config_parameter"].sudo().get_param("l10n_ar_tax.arba_alicout_timeout", default=40)
+            self.env["ir.config_parameter"].sudo().get_param("l10n_ar_tax.arba_alicout_timeout", default=15)
         )
         request_data = {
             "user": self.partner_id.ensure_vat(),
             "password": self.arba_cit,
         }
-        res = requests.post(login_url, data=request_data, files={"file": file}, timeout=arba_alicout_timeout)
+        arba_error_msg = _(
+            "Could not get the tax rate from the ARBA webservice, "
+            "probably due to a service outage or intermittency.\n\n"
+            "To keep operating you can:\n"
+            "1) Check the taxpayer's tax rate manually "
+            "(for example at https://padron.devos.com.ar/ or on the ARBA website).\n"
+            "2) Manually set the tax rate on the contact's 'Accounting' tab, "
+            "to exceptionally register the payment/document.\n\n"
+            "If the problem persists, please contact our Support team.\n"
+        )
+        try:
+            res = requests.post(login_url, data=request_data, files={"file": file}, timeout=arba_alicout_timeout)
+        except requests.exceptions.Timeout as exp:
+            _logger.warning("ARBA webservice timeout: %s", exp)
+            raise UserError(arba_error_msg + _("Detail: read operation timed out."))
+        except requests.exceptions.RequestException as exp:
+            _logger.warning("ARBA webservice connection error: %s", exp)
+            raise UserError(arba_error_msg + _("Detail: %s") % str(exp))
         if res.ok:
             response_xml = self._arba_cit_parse_response(res.content)
         else:
-            _logger.error("Error parsing ARBA response: %s\n %s", str(res.text))
+            _logger.error("Error parsing ARBA response: %s", str(res.text))
             raise UserError(self.env._("Error parsing ARBA response: %s") % str(res.text))
         return response_xml

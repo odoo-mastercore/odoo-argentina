@@ -10,6 +10,11 @@ class AccountMove(models.Model):
         compute="_compute_perceptions_fiscal_position",
     )
 
+    @api.depends(
+        "fiscal_position_id",
+        "fiscal_position_id.l10n_ar_tax_ids",
+        "fiscal_position_id.l10n_ar_tax_ids.tax_type",
+    )
     def _compute_perceptions_fiscal_position(self):
         """
         Compute if the fiscal position has perceptions.
@@ -18,6 +23,14 @@ class AccountMove(models.Model):
             move.perceptions_fiscal_positon = bool(
                 move.fiscal_position_id.l10n_ar_tax_ids.filtered(lambda x: x.tax_type == "perception")
             )
+
+    @api.depends("partner_id", "partner_shipping_id", "company_id")
+    def _compute_fiscal_position_id(self):
+        """Skip the fiscal position on journal entries (move_type='entry', e.g. payments): it is not
+        used there and, when it carries perceptions, it only adds a misleading warning banner."""
+        entries = self.filtered(lambda move: move.move_type == "entry")
+        entries.fiscal_position_id = False
+        super(AccountMove, self - entries)._compute_fiscal_position_id()
 
     def _get_tax_factor(self):
         self.ensure_one()
@@ -48,7 +61,10 @@ class AccountMove(models.Model):
         NO lo hacemos para el cambio de fiscal_position_id porque el onchange de fiscal_position_id implementado en sale_ux ya recomputa todos los taxes
         """
         for move in self.filtered(
-            lambda x: x.is_sale_document(include_receipts=True) and x.perceptions_fiscal_positon and x.state == "draft"
+            lambda x: x.is_sale_document(include_receipts=True)
+            and x.fiscal_position_id
+            and x.perceptions_fiscal_positon
+            and x.state == "draft"
         ):
             fp_tax_groups = move.fiscal_position_id.l10n_ar_tax_ids.filtered(
                 lambda x: x.tax_type == "perception"

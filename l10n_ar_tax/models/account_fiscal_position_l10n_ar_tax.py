@@ -104,11 +104,12 @@ class AccountFiscalPositionL10nArTax(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        """Resolve default_tax_id from tax_group_id + aliquot before INSERT so that
-        the required=True constraint on default_tax_id is satisfied.
-        Also derives webservice from default_tax_id when not explicitly provided."""
+        """Try to resolve default_tax_id from tax_group_id + aliquot before INSERT
+        (aliquot defaults to 0, i.e. the group's zero-aliquot tax) and derive webservice
+        from it. If no matching tax can be resolved, default_tax_id stays unset and the
+        required=True constraint raises as usual."""
         for vals in vals_list:
-            if not vals.get("default_tax_id") and vals.get("tax_group_id") and "aliquot" in vals:
+            if not vals.get("default_tax_id") and vals.get("tax_group_id"):
                 stub = self.new(vals)
                 stub._sync_default_tax_from_ux_fields()
                 if stub.default_tax_id:
@@ -135,8 +136,9 @@ class AccountFiscalPositionL10nArTax(models.Model):
 
     @api.onchange("tax_group_id")
     def _onchange_tax_group_id(self):
-        """When group changes, sync only if aliquot is already filled."""
-        if self.tax_group_id and self.aliquot:
+        """Resolve default_tax_id from the group (and aliquot); selecting the group alone
+        defaults to its zero-aliquot tax, so the line can be saved with just the group."""
+        if self.tax_group_id:
             self._sync_default_tax_from_ux_fields()
 
     @api.onchange("aliquot")
@@ -174,11 +176,11 @@ class AccountFiscalPositionL10nArTax(models.Model):
     @api.depends("fiscal_position_id.company_id", "tax_type")
     def _compute_tax_group_id_domain(self):
         for rec in self:
-            company_id = rec.fiscal_position_id.company_id.id or rec.env.company.id
-            domain = [
-                ("company_id", "=", company_id),
-                ("l10n_ar_vat_afip_code", "=", False),
-            ]
+            company = rec.fiscal_position_id.company_id or rec.env.company
+            # con _check_company_domain (parent_of) una sucursal puede elegir los grupos de impuestos
+            # de la compañía padre, igual que el dominio de default_tax_id (_get_tax_domain)
+            domain = self.env["account.tax.group"]._check_company_domain(company)
+            domain += [("l10n_ar_vat_afip_code", "=", False)]
             if rec.tax_type == "perception":
                 domain += [("tax_ids.type_tax_use", "=", "sale")]
             elif rec.tax_type == "withholding":
@@ -188,7 +190,7 @@ class AccountFiscalPositionL10nArTax(models.Model):
     def _get_tax_domain(self, filter_tax_group=True):
         self.ensure_one()
         domain = self.env["account.tax"]._check_company_domain(self.fiscal_position_id.company_id)
-        domain += [("amount_type", "in", ["percent", "division"])]
+        domain += [("amount_type", "in", ["percent"])]
         if filter_tax_group:
             tax_group = self.tax_group_id or self.default_tax_id.tax_group_id
             if tax_group:
