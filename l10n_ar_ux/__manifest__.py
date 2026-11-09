@@ -1,6 +1,6 @@
 {
     "name": "Argentinian Accounting UX",
-    "version": "19.0.1.10.0",
+    "version": "19.0.1.14.0",
     "category": "Localization/Argentina",
     "sequence": 14,
     "author": "ADHOC SA",
@@ -29,6 +29,8 @@
         "data/res_groups_data.xml",
         "views/account_fiscal_position_view.xml",
         "views/account_move_debit_note_view.xml",
+        "views/account_move_view.xml",
+        "wizard/l10n_ar_ux_partner_responsibility_views.xml",
     ],
     "demo": [
         "demo/res_partner_demo.xml",
@@ -37,4 +39,5 @@
     "installable": True,
     "auto_install": True,
     "application": False,
+    "post_init_hook": "post_init_hook",
 }

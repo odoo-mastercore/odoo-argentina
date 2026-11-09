@@ -9,12 +9,12 @@ class TestPaymentWithholdingValidation(TestArWithholdingArRi):
     def setUpClass(cls):
         super().setUpClass()
         cls.caba_tax_perception = cls.env.ref("account.%i_ri_tax_percepcion_iibb_caba_aplicada" % cls.env.company.id)
-        # Create caba perception tax with amounts 1% and 2%
+        # Create caba perception tax with amounts 1% and 2% (active: account_ux drops inactive taxes on refunds)
         cls.caba_tax_perception_with_amount_1 = cls.caba_tax_perception.copy(
-            default={"amount_type": "percent", "amount": 1}
+            default={"name": "P. IIBB CABA 1% (test)", "amount_type": "percent", "amount": 1, "active": True}
         )
         cls.caba_tax_perception_with_amount_2 = cls.caba_tax_perception.copy(
-            default={"amount_type": "percent", "amount": 2}
+            default={"name": "P. IIBB CABA 2% (test)", "amount_type": "percent", "amount": 2, "active": True}
         )
 
     def _create_invoice_with_caba_perception(self):
@@ -36,6 +36,7 @@ class TestPaymentWithholdingValidation(TestArWithholdingArRi):
                 "name": "Contact Person",
                 "parent_id": commercial_partner.id,
                 "is_company": False,
+                "country_id": self.env.ref("base.ar").id,
                 "state_id": self.env.ref("base.state_ar_c").id,  # CABA state
             }
         )
@@ -87,7 +88,7 @@ class TestPaymentWithholdingValidation(TestArWithholdingArRi):
                 "fiscal_position_id": fiscal_position_caba.id,
                 "default_tax_id": self.caba_tax_perception.id,
                 "tax_type": "perception",
-                "webservice": "agip",
+                "webservice": "padron",
             }
         )
 
@@ -144,3 +145,33 @@ class TestPaymentWithholdingValidation(TestArWithholdingArRi):
             invoice.invoice_line_ids.tax_ids,
         )
         self.assertNotIn(invoice.partner_id.l10n_ar_partner_perception_ids.tax_id, invoice.invoice_line_ids.tax_ids)
+
+    def _assert_perception_only_on_product_lines(self, invoice):
+        perception = self.caba_tax_perception_with_amount_1
+        product_lines = invoice.invoice_line_ids.filtered(lambda x: x.display_type == "product")
+        other_lines = invoice.invoice_line_ids - product_lines
+        self.assertTrue(product_lines)
+        self.assertEqual({"line_section", "line_note"}, set(other_lines.mapped("display_type")))
+        for line in product_lines:
+            self.assertIn(perception, line.tax_ids)
+        for line in other_lines:
+            self.assertFalse(line.tax_ids)
+
+    def test_perception_not_added_to_section_and_note_lines(self):
+        """Recomputing perceptions keeps them on product lines and never adds them to sections or notes."""
+        invoice = self._create_invoice_with_caba_perception()
+        invoice.invoice_line_ids = [
+            Command.create({"display_type": "line_section", "name": "Section"}),
+            Command.create({"display_type": "line_note", "name": "Note"}),
+        ]
+        invoice._l10n_ar_recompute_fiscal_position_taxes()
+        self._assert_perception_only_on_product_lines(invoice)
+
+    def test_duplicate_invoice_keeps_perception_only_on_product_lines(self):
+        invoice = self._create_invoice_with_caba_perception()
+        invoice.invoice_line_ids = [
+            Command.create({"display_type": "line_section", "name": "Section"}),
+            Command.create({"display_type": "line_note", "name": "Note"}),
+        ]
+        copy = invoice.copy({"invoice_date": invoice.invoice_date, "date": invoice.date})
+        self._assert_perception_only_on_product_lines(copy)

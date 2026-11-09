@@ -2,7 +2,7 @@
 # For copyright and license notices, see __manifest__.py file in module root
 # directory
 ##############################################################################
-from odoo import fields, models
+from odoo import api, fields, models
 
 
 class ResCompany(models.Model):
@@ -23,3 +23,28 @@ class ResCompany(models.Model):
     l10n_ar_report_signature = fields.Image("Firma", copy=False, attachment=True)
     l10n_ar_report_signed_by = fields.Text("Aclaracion", copy=False)
     l10n_ar_invoice_report_ars_amount = fields.Boolean("Mostrar importe equivalente en ARS", default=False)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """New branches of an Argentinian company get "Taxes in company currency" disabled, like any AR company.
+
+        Branches do not load a chart template, so without this they get the field default (True) and print the
+        extra taxes box in ARS. The value of the parent company is not inherited on purpose.
+        """
+        for vals in vals_list:
+            if vals.get("parent_id") and "display_invoice_tax_company_currency" not in vals:
+                parent = self.browse(vals["parent_id"])
+                if parent.account_fiscal_country_id.code == "AR":
+                    vals["display_invoice_tax_company_currency"] = False
+        return super().create(vals_list)
+
+    @api.model
+    def _l10n_ar_ux_hide_invoice_tax_company_currency(self):
+        """Disable "Taxes in company currency" on Argentinian companies.
+
+        Odoo adds this setting in 18.0 with default True, so every company gets it enabled on install or upgrade
+        and the AR legal invoice report prints an extra taxes box in ARS on foreign currency invoices.
+        """
+        self.search([("account_fiscal_country_id.code", "=", "AR")]).write(
+            {"display_invoice_tax_company_currency": False}
+        )

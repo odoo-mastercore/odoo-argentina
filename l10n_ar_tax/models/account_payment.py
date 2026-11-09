@@ -4,6 +4,7 @@
 ##############################################################################
 from odoo import Command, _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
+from odoo.tools.sql import column_exists, create_column
 
 
 class AccountPayment(models.Model):
@@ -30,6 +31,30 @@ class AccountPayment(models.Model):
         readonly=False,
         domain=[("l10n_ar_tax_ids.tax_type", "=", "withholding")],
     )
+
+    def _auto_init(self):
+        # create the columns by hand so that installing does not queue a recompute over the whole
+        # payment history: on a big database that sweep goes over the worker time limit and the
+        # install dies half way through
+        if not column_exists(self.env.cr, "account_payment", "l10n_ar_fiscal_position_id"):
+            # left empty on purpose: only draft supplier payments end up with one, and those are
+            # computed from _l10n_ar_update_taxes
+            create_column(self.env.cr, "account_payment", "l10n_ar_fiscal_position_id", "int4")
+        if not column_exists(self.env.cr, "account_payment", "withholdable_advanced_amount"):
+            # DEFAULT 0 fills the existing rows without rewriting the table (postgres keeps it as
+            # metadata), so they hold the same 0.0 the compute would have stored. Leaving them NULL
+            # reads as 0.0 too, but is not matched by a `= 0` domain. The default is dropped right
+            # away so the column ends up exactly as the ORM would have created it
+            self.env.cr.execute("ALTER TABLE account_payment ADD COLUMN withholdable_advanced_amount numeric DEFAULT 0")
+            self.env.cr.execute("ALTER TABLE account_payment ALTER COLUMN withholdable_advanced_amount DROP DEFAULT")
+            # only the payments carrying an advance need the backfill. It is not narrowed to the
+            # draft ones: unreconciled_amount does not change when a payment is reset to draft, so
+            # the compute would never fill them again
+            self.env.cr.execute(
+                "UPDATE account_payment SET withholdable_advanced_amount = unreconciled_amount"
+                " WHERE unreconciled_amount <> 0"
+            )
+        return super()._auto_init()
 
     @api.depends("to_pay_move_line_ids", "partner_id", "payment_method_line_id")
     def _compute_fiscal_position_id(self):
@@ -161,6 +186,20 @@ class AccountPayment(models.Model):
     #         rec._compute_withholdings()
     #         # rec.force_amount_company_currency += rec.payment_difference
     #         # rec.unreconciled_amount = rec.to_pay_amount - rec.selected_debt
+
+    def _l10n_ar_remove_zero_withholding_lines(self):
+        """Elimina las líneas de retención que no arrojan retención (importe 0) al postear
+        el pago, para que no queden en el pago ni ensucien la vista/reportes.
+        Ganancias se conserva siempre: su base acumulada puede requerir el apunte contable
+        aunque el importe sea 0. Usamos ``currency_id.is_zero`` (mismo criterio que
+        account_tax_settlement al saltear líneas en cero) para contemplar el redondeo."""
+        for rec in self:
+            is_zero = rec.company_id.currency_id.is_zero
+            zero_lines = rec.l10n_ar_withholding_line_ids.filtered(
+                lambda line: line.tax_id.l10n_ar_tax_type not in ["earnings", "earnings_scale"] and is_zero(line.amount)
+            )
+            if zero_lines:
+                rec.l10n_ar_withholding_line_ids = [Command.unlink(line.id) for line in zero_lines]
 
     def _prepare_move_withholding_lines(self, default_values):
         res = super()._prepare_move_withholding_lines(default_values)
@@ -362,6 +401,7 @@ class AccountPayment(models.Model):
         return res
 
     def action_post(self):
+        self._l10n_ar_remove_zero_withholding_lines()
         for rec in self:
             commands = []
             for line in rec.l10n_ar_withholding_line_ids:
@@ -394,7 +434,28 @@ class AccountPayment(models.Model):
         # under the same name, which would otherwise serve the stale cached PDF.
         # Drop the cached receipt so it is regenerated on the next render.
         self._unlink_cached_payment_receipt()
+        self._unlink_cached_withholding_certificates()
         return super().action_draft()
+
+    def _l10n_ar_withholding_certificates_filename(self):
+        """Filename of the single PDF holding all the withholding certificates
+        of this payment (one page per withholding). Shared by the preview and
+        the sending path of mail.compose.message."""
+        self.ensure_one()
+        return "Certificados de Retención - %s.pdf" % (self.name or "").replace("/", "_")
+
+    def _unlink_cached_withholding_certificates(self):
+        # Same rationale as _unlink_cached_payment_receipt: the certificate of
+        # each withholding line is cached (attachment_use on
+        # l10n_ar_tax.action_report_withholding_certificate) and becomes stale
+        # if the payment is edited and reposted under the same name.
+        report = self.env.ref("l10n_ar_tax.action_report_withholding_certificate", raise_if_not_found=False)
+        if not report:
+            return
+        for withholding in self.l10n_ar_withholding_line_ids:
+            attachment = report.retrieve_attachment(withholding)
+            if attachment:
+                attachment.unlink()
 
     def _unlink_cached_payment_receipt(self):
         report = self.env.ref("account.action_report_payment_receipt", raise_if_not_found=False)

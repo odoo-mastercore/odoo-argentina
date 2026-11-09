@@ -11,7 +11,8 @@ Implements automatic calculation of Argentine withholdings (retenciones) and per
 - Fiscal position-based tax automation.
 - Withholding certificate generation.
 - Integration with ARCA web services.
-- ARBA and Santa Fe (PARP) padron importers.
+- ARBA, Santa Fe (PARP) and AGIP (CABA) padron readers.
+- Santa Fe withholding base per taxpayer regime: Multilateral Agreement withholds on the total.
 - Same-period base accumulation for taxes like Ganancias with minimum thresholds.
 - Integration with `account_payment_pro` tri-currency model.
 
@@ -31,7 +32,26 @@ Implements automatic calculation of Argentine withholdings (retenciones) and per
 2. **Fiscal positions:** Accounting → Configuration → Fiscal Positions — set up automatic tax assignment. In a multi-company setup with branches, a fiscal position of a branch can use the tax groups and taxes of its parent company (same behaviour as standard Odoo account mapping), so the chart of taxes only needs to be configured once on the parent.
 3. **Partner tax ID:** in Contacts, configure CUIT/CUIL/DNI.
 4. **Tax ratios:** set ratios (1–100) on percentage-based taxes to control the taxable base percentage.
-5. **Padron importers:** for Santa Fe (PARP) and ARBA, configure the corresponding fiscal position with the web service setting. See `doc/padron_santa_fe/` for specs and examples.
+5. **Padron files:** for Santa Fe (PARP), ARBA and AGIP (CABA) the padron file is uploaded in Accounting → Configuration → Padron Alicuotas. The aliquot is read from the uploaded file on demand (AGIP accepts the `.rar` published by AGIP, or a `.zip`; reading `.rar` requires the `unrar` python library). See `doc/padron_santa_fe/` for specs and examples.
+
+### How the aliquot is resolved
+
+The same order applies to every jurisdiction, so a padron file always works as the contingency for a failing web service:
+
+1. **Aliquot loaded on the contact** (Contacts → Accounting) for the period: it wins over everything else.
+2. **Padron file** uploaded for that jurisdiction and period: it wins over the web service, even when the fiscal position line is set to query one.
+3. **Web service** of the jurisdiction (ARBA, Rentas Córdoba, AGIP). Setting the line to *Archivo de padrón* means this jurisdiction never queries a web service: with no padron uploaded the user is asked to upload it instead.
+
+### Withholding base in Santa Fe
+
+The PARP padron reports the taxpayer regime, and in Santa Fe that regime sets the base of the withholding (art. 380, RG 36/2026 of API Santa Fe):
+
+- **Local (`D`):** net base, without VAT. It is the base the Santa Fe withholding taxes are already configured with, so the configured tax is used as is.
+- **Multilateral Agreement (`C`):** the total amount, with no deduction. If no tax on the total exists for that aliquot, one is created from the configured tax, with the same aliquot and a `CM` suffix in its name.
+
+Taxes with the `CM` suffix belong to this flow and are not offered in the default tax selector of the fiscal position line: choosing one by hand would apply the total base to every taxpayer, local ones included. A tax on the total configured on purpose (a supplier that does not itemize VAT) stays selectable and is never overwritten by the padron.
+
+Perceptions follow the same regime (art. 387): a local (`D`) is perceived on the net base, a Multilateral Agreement taxpayer (`C`) on 50% of it. For the latter, a tax with a 50% *Ratio* is created from the configured one, with the same aliquot and a `CM` suffix in its name. The *Ratio* of a sale tax only applies to Santa Fe perceptions.
 
 ## Usage
 

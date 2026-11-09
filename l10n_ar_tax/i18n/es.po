@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 19.0+e\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-17 18:56+0000\n"
+"POT-Creation-Date: 2026-10-15 18:24+0000\n"
 "PO-Revision-Date: 2026-05-27 19:27+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -383,12 +383,6 @@ msgid "06 - VAT perception or Withholding"
 msgstr "06 - Percepción de IVA"
 
 #. module: l10n_ar_tax
-#. odoo-python
-#: code:addons/l10n_ar_tax/models/account_fiscal_position_l10n_ar_tax.py:0
-msgid "404 Not Found error."
-msgstr "Error 404: No encontrado."
-
-#. module: l10n_ar_tax
 #: model_terms:ir.ui.view,arch_db:l10n_ar_tax.report_payment_receipt_document
 msgid "<br/><strong>VAT Cond: </strong>"
 msgstr "<br/><strong>Cond. IVA: </strong>"
@@ -430,13 +424,13 @@ msgstr "<strong><span>Total Pendiente</span></strong>"
 
 #. module: l10n_ar_tax
 #: model_terms:ir.ui.view,arch_db:l10n_ar_tax.report_withholding_certificate_document
-msgid "<strong>Customer: </strong>"
-msgstr "<strong>Cliente: </strong>"
+msgid "<strong>Datos de la retención practicada</strong>"
+msgstr ""
 
 #. module: l10n_ar_tax
 #: model_terms:ir.ui.view,arch_db:l10n_ar_tax.report_withholding_certificate_document
-msgid "<strong>Datos de la retención practicada</strong>"
-msgstr ""
+msgid "<strong>Supplier: </strong>"
+msgstr "<strong>Proveedor: </strong>"
 
 #. module: l10n_ar_tax
 #: model_terms:ir.ui.view,arch_db:l10n_ar_tax.report_withholding_certificate_document
@@ -452,9 +446,23 @@ msgid ""
 msgstr ""
 
 #. module: l10n_ar_tax
+#: model_terms:ir.ui.view,arch_db:l10n_ar_tax.view_res_company_jurisdiction_padron_form
+msgid ""
+"AGIP (CABA): debe subir el archivo comprimido (rar o zip) del padrón de "
+"Regímenes Generales que descarga de la web de AGIP. La alícuota se lee del "
+"archivo cuando se necesita, no hace falta procesarlo."
+msgstr ""
+
+#. module: l10n_ar_tax
 #: model:ir.model.fields.selection,name:l10n_ar_tax.selection__account_fiscal_position_l10n_ar_tax__webservice__agip
 msgid "AGIP (Regimen General)"
 msgstr "AGIP (Régimen General)"
+
+#. module: l10n_ar_tax
+#. odoo-python
+#: code:addons/l10n_ar_tax/models/account_fiscal_position_l10n_ar_tax.py:0
+msgid "AGIP padron aliquot (imported file)"
+msgstr "Alícuota padrón AGIP (archivo importado)"
 
 #. module: l10n_ar_tax
 #: model_terms:ir.ui.view,arch_db:l10n_ar_tax.view_tax_form
@@ -534,7 +542,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:l10n_ar_tax.field_l10n_ar_payment_register_withholding__amount
 #: model:ir.model.fields,field_description:l10n_ar_tax.field_l10n_ar_payment_withholding__amount
 msgid "Amount"
-msgstr "Cantidad"
+msgstr "Importe"
 
 #. module: l10n_ar_tax
 #: model:ir.model.fields.selection,name:l10n_ar_tax.selection__account_fiscal_position_l10n_ar_tax__webservice__padron
@@ -577,7 +585,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:l10n_ar_tax.field_l10n_ar_payment_register_withholding__base_amount
 #: model:ir.model.fields,field_description:l10n_ar_tax.field_l10n_ar_payment_withholding__base_amount
 msgid "Base Amount"
-msgstr "Cantidad base"
+msgstr "Importe Base"
 
 #. module: l10n_ar_tax
 #: model:ir.model.fields,field_description:l10n_ar_tax.field_res_config_settings__arba_cit
@@ -803,6 +811,12 @@ msgstr "Impuesto por Defecto"
 
 #. module: l10n_ar_tax
 #. odoo-python
+#: code:addons/l10n_ar_tax/models/account_fiscal_position_l10n_ar_tax.py:0
+msgid "Default aliquot. Not found in AGIP padron"
+msgstr "Alícuota por defecto. No figura en padrón AGIP"
+
+#. module: l10n_ar_tax
+#. odoo-python
 #: code:addons/l10n_ar_tax/models/res_company.py:0
 msgid "Detail: %s"
 msgstr "Detalle: %s"
@@ -905,6 +919,12 @@ msgstr ""
 #: model:ir.model.fields,field_description:l10n_ar_tax.field_res_company_jurisdiction_padron__l10n_ar_padron_from_date
 msgid "From Date"
 msgstr "Desde"
+
+#. module: l10n_ar_tax
+#. odoo-python
+#: code:addons/l10n_ar_tax/models/account_fiscal_position_l10n_ar_tax.py:0
+msgid "HTTP %s error."
+msgstr "Error HTTP %s."
 
 #. module: l10n_ar_tax
 #: model:ir.model.fields,field_description:l10n_ar_tax.field_account_chart_template__id
@@ -1058,14 +1078,6 @@ msgid "Minimum Threshold"
 msgstr "Retención mínima"
 
 #. module: l10n_ar_tax
-#. odoo-python
-#: code:addons/l10n_ar_tax/models/account_fiscal_position_l10n_ar_tax.py:0
-msgid "Missing ADHOC credential configuration for AGIP tax rate queries"
-msgstr ""
-"Falta configuración de credenciales de ADHOC para consulta de Alícuotas de "
-"AGIP"
-
-#. module: l10n_ar_tax
 #: model:ir.model.fields.selection,name:l10n_ar_tax.selection__res_partner__drei__no_activo
 msgid "No Activo"
 msgstr ""
@@ -1120,6 +1132,12 @@ msgstr "Observaciones:"
 #: code:addons/l10n_ar_tax/models/res_company_jurisdiction_padron.py:0
 msgid "Only compressed ZIP files are allowed for Santa Fe."
 msgstr "Solo se permiten archivos ZIP comprimidos para Santa Fe."
+
+#. module: l10n_ar_tax
+#. odoo-python
+#: code:addons/l10n_ar_tax/models/res_company_jurisdiction_padron.py:0
+msgid "Only compressed ZIP or RAR files are allowed for AGIP (CABA)."
+msgstr "Solo se permiten archivos ZIP o RAR comprimidos para AGIP (CABA)."
 
 #. module: l10n_ar_tax
 #: model:ir.actions.act_window,name:l10n_ar_tax.act_company_jurisdiction_padron
@@ -1381,6 +1399,38 @@ msgid "Taxes"
 msgstr ""
 
 #. module: l10n_ar_tax
+#. odoo-python
+#: code:addons/l10n_ar_tax/models/res_company_jurisdiction_padron.py:0
+msgid ""
+"The aliquot padron could not be read: looking up CUIT %s failed. Please try "
+"again in a few minutes or enter the tax rate manually on the contact."
+msgstr ""
+
+#. module: l10n_ar_tax
+#. odoo-python
+#: code:addons/l10n_ar_tax/models/res_company_jurisdiction_padron.py:0
+msgid ""
+"The aliquot padron could not be read: looking up CUIT %s took too long. "
+"Please try again in a few minutes or enter the tax rate manually on the "
+"contact."
+msgstr ""
+"No se pudo leer el padrón de alícuotas: la búsqueda del CUIT %s tardó "
+"demasiado. Vuelva a intentar en unos minutos o cargue la alícuota "
+"manualmente en el contacto."
+
+#. module: l10n_ar_tax
+#. odoo-python
+#: code:addons/l10n_ar_tax/models/res_company_jurisdiction_padron.py:0
+msgid "The compressed file does not contain the padron in CSV or TXT format."
+msgstr "El archivo comprimido no contiene el padrón en formato CSV o TXT."
+
+#. module: l10n_ar_tax
+#. odoo-python
+#: code:addons/l10n_ar_tax/models/res_company_jurisdiction_padron.py:0
+msgid "The padron for %s is not implemented."
+msgstr "El padrón para %s no está implementado."
+
+#. module: l10n_ar_tax
 #: model:ir.model.fields,help:l10n_ar_tax.field_account_tax__l10n_ar_state_code
 msgid "The state code."
 msgstr "El código del estado."
@@ -1392,6 +1442,22 @@ msgid ""
 "The total percentage (%s) should be greater than 0 and less than or equal to "
 "100."
 msgstr "El porcentaje total (%s) debe ser mayor que 0 y menor o igual que 100."
+
+#. module: l10n_ar_tax
+#. odoo-python
+#: code:addons/l10n_ar_tax/models/account_fiscal_position_l10n_ar_tax.py:0
+msgid "The webservice answered a non-JSON response."
+msgstr "El webservice respondió algo que no es JSON."
+
+#. module: l10n_ar_tax
+#. odoo-python
+#: code:addons/l10n_ar_tax/models/res_company_jurisdiction_padron.py:0
+msgid ""
+"This database cannot read RAR files (the 'unrar' library is not installed). "
+"Please upload the AGIP padron as a ZIP file instead."
+msgstr ""
+"Esta base de datos no puede leer archivos RAR (la librería 'unrar' no está "
+"instalada). Suba el padrón de AGIP como archivo ZIP."
 
 #. module: l10n_ar_tax
 #. odoo-python
@@ -1427,8 +1493,13 @@ msgstr "Utilizado para el cálculo de retenciones"
 
 #. module: l10n_ar_tax
 #: model_terms:ir.ui.view,arch_db:l10n_ar_tax.res_config_settings_view_form
-msgid "Verifies the CIT key against the ARBA production server."
-msgstr "Verifica la clave CIT contra el servidor de producción de ARBA."
+msgid ""
+"Verifies the CIT key with the ARBA taxpayer registry service (IIBB "
+"withholding and perception rates), always on the ARBA production server."
+msgstr ""
+"Verifica la clave CIT con el servicio de padrón de contribuyentes de ARBA "
+"(alícuotas de percepción y retención de IIBB), siempre en el servidor de "
+"producción de ARBA."
 
 #. module: l10n_ar_tax
 #: model:ir.model.fields,field_description:l10n_ar_tax.field_account_tax__l10n_ar_withholding_sequence_id
@@ -1557,7 +1628,7 @@ msgstr ""
 msgid ""
 "que tiene impuestos de percepciones. Como las alicuotas podrían variar según "
 "la fecha del comprobante, cambiar la fecha o validar la factura re-computará "
-"los impuestos."
+"los impuestos en todas las líneas de factura."
 msgstr ""
 
 #. module: l10n_ar_tax
@@ -1569,6 +1640,11 @@ msgstr ""
 #: model_terms:ir.ui.view,arch_db:l10n_ar_tax.res_config_settings_view_form
 msgid "⇒ Verify ARBA Key"
 msgstr "⇒ Verificar Clave ARBA"
+
+#~ msgid "Missing ADHOC credential configuration for AGIP tax rate queries"
+#~ msgstr ""
+#~ "Falta configuración de credenciales de ADHOC para consulta de Alícuotas "
+#~ "de AGIP"
 
 #~ msgid "(Electronic checkbook)"
 #~ msgstr "(Chequera electrónica)"
